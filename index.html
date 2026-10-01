@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教科問題作成＆自動採点アプリ</title>
+    
+    <!-- MathJax設定 -->
+    <script>
+        window.MathJax = { 
+            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] } 
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js" type="text/javascript"></script>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="toast"></div>
+
+<div class="app-container">
+    <h1>
+        <span id="secretIcon" class="title-icon" title="隠しコマンド？">📚</span>
+        教科問題作成＆自動採点アプリ
+    </h1>
+
+    <div class="panel login-panel" id="loginPanel">
+        <div id="loginFormArea">
+            <div class="input-group" style="justify-content: center; margin-bottom: 0;">
+                <input type="text" id="usernameInput" placeholder="あなたの名前 (例: たろう)" style="flex: 2;">
+                <input type="password" id="pinInput" placeholder="PIN (4桁以上)" style="flex: 1;" onkeypress="if(event.key==='Enter') login()">
+                <button class="btn-warning" onclick="login()">ログイン / アカウント作成</button>
+            </div>
+            <p style="font-size:12px; color:#666; margin:8px 0 0 0;">※名前と暗証番号で専用データが保存されます。</p>
+        </div>
+        <div id="loggedInArea" style="display: none; justify-content: center; align-items: center; gap: 15px;">
+            <span id="welcomeMessage" style="font-weight:bold; font-size:16px;"></span>
+            <button class="btn-danger" onclick="logout()" style="padding: 6px 12px; font-size: 12px;">ログアウト</button>
+        </div>
+    </div>
+
+    <div class="status-panel">
+        <div>
+            <div style="font-size: 13px; opacity: 0.9;">現在のレベル称号</div>
+            <div id="userBadge" class="status-badge">ゲスト</div>
+        </div>
+        <div style="text-align: right;">
+            <span style="font-size: 13px; opacity: 0.9;">合計スコア: </span>
+            <span style="font-size: 18px; font-weight: bold;" id="totalScore">0</span> <span style="font-size: 13px;">点 /</span> 
+            <span style="font-size: 13px; opacity: 0.9; margin-left: 5px;">解いた問題数: </span>
+            <span style="font-size: 18px; font-weight: bold;" id="totalQuestions">0</span> <span style="font-size: 13px;">問</span>
+        </div>
+        <button class="btn-primary" style="width: 100%; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.5); border-radius: 8px;" onclick="showHistory()">📜 自分の学習履歴を見る</button>
+    </div>
+
+    <div class="panel">
+        <label style="font-weight: bold; display: block; margin-bottom: 5px;">🔑 Gemini APIキーの設定：</label>
+        <input type="password" id="apiKeyInput" placeholder="AIzaSy..." style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box;" onchange="saveApiKey()">
+    </div>
+
+    <div class="panel" style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center;">
+        <div>
+            <label style="font-weight: bold; display: inline-block; margin-bottom: 5px;">🖼️ 背景設定：</label>
+            <input type="file" id="bgInput" accept="image/*" onchange="changeBackground(event)" style="font-size: 13px;">
+            <button class="btn-secondary" onclick="resetBackground()" style="font-size: 11px; padding: 4px 8px;">戻す</button>
+        </div>
+        <div>
+            <button class="btn-secondary" onclick="exportData()" style="font-size: 12px; padding: 5px 10px;">💾 データ保存(JSON)</button>
+            <button class="btn-secondary" onclick="document.getElementById('importFile').click()" style="font-size: 12px; padding: 5px 10px;">📂 復元</button>
+            <input type="file" id="importFile" accept=".json" style="display: none;" onchange="importData(event)">
+        </div>
+    </div>
+
+    <div class="mode-tabs">
+        <div class="mode-tab active" id="tab-interactive" onclick="switchMode('interactive')">🎯 インタラクティブ</div>
+        <div class="mode-tab" id="tab-test" onclick="switchMode('test')">📝 一覧テスト (記述)</div>
+        <div class="mode-tab" id="tab-flashcard" onclick="switchMode('flashcard')">🎴 フラッシュカード</div>
+    </div>
+
+    <div class="input-group" style="margin-bottom: 20px; align-items: stretch;">
+        <input type="text" id="subjectInput" placeholder="例：中学2年 理科 化学変化と原子・分子" style="font-size: 15px; padding: 10px; flex: 2;">
+        <div style="display:flex; align-items:center; background:#fff; border:1px solid #c4c7c5; border-radius:8px; padding:0 10px;">
+            <input type="number" id="qCount" min="1" max="20" value="4" style="border:none; outline:none; font-size:16px; width:40px; text-align:center; padding:10px 0;">
+            <span style="font-size:14px; color:#555;" id="countUnit">問</span>
+        </div>
+        <select id="diffLevel" style="padding: 10px; font-size: 15px;">
+            <option value="基礎">基礎</option><option value="標準" selected>標準</option><option value="応用">応用</option>
+        </select>
+        <button id="generateBtn" class="btn-primary" style="font-size: 15px; padding: 10px 20px;" onclick="handleGenerate()">✨ 作成する</button>
+    </div>
+
+    <div id="loadingSpinner" class="spinner"></div>
+    <div id="loadingText" style="display:none; text-align:center; font-size:14px; font-weight:bold; color:#555; margin-bottom:10px;">AIが思考しているよ...</div>
+
+    <!-- 🎯 1. インタラクティブクイズ -->
+    <div id="quiz-section">
+        <div class="quiz-header-title">
+            <span id="quiz-title-text">確認テスト</span>
+            <span style="font-size:12px; color:#888;">Gemini Quiz Mode</span>
+        </div>
+        <div class="quiz-top-bar">
+            <div class="quiz-segments" id="quiz-segments-bar"></div>
+            <span class="quiz-counter" id="quiz-counter">1/4</span>
+            <div class="quiz-badge-wrong" id="quiz-badge-wrong">✕ 0</div>
+            <div class="quiz-badge-correct" id="quiz-badge-correct">✓ 0</div>
+        </div>
+        <div class="quiz-question-label" id="quiz-q-num">問題 1</div>
+        <div class="quiz-question-text" id="quiz-q-text">問題文</div>
+        <div class="quiz-options" id="quiz-options-container"></div>
+        <div class="quiz-hint-box">
+            <div class="quiz-hint-toggle" onclick="toggleQuizHint()"><span id="quiz-hint-arrow">ヒント ∨</span></div>
+            <div class="quiz-hint-content" id="quiz-hint-content"></div>
+            <div class="quiz-explanation-content" id="quiz-exp-content"></div>
+        </div>
+        <div class="quiz-nav-bar">
+            <button class="btn-gemini-back" id="btn-quiz-back" onclick="navQuiz(-1)">戻る</button>
+            <button class="btn-gemini-next" id="btn-quiz-next" onclick="navQuiz(1)" disabled>次へ</button>
+        </div>
+    </div>
+
+    <!-- 🎴 2. フラッシュカード -->
+    <div id="flashcard-section">
+        <div class="fc-top-bar">
+            <span id="fc-counter" style="font-weight: bold; color: #1a73e8;">カード 1 / 10</span>
+            <button class="btn-secondary" style="font-size:12px; padding:4px 10px;" onclick="shuffleCards()">🔀 シャッフル</button>
+        </div>
+        <div class="fc-progress-bg"><div id="fc-progress-fill" class="fc-progress-fill"></div></div>
+        <div class="fc-card-scene" onclick="flipCurrentCard()">
+            <div id="fc-active-card" class="fc-card">
+                <div class="fc-card-face fc-card-front">
+                    <div style="font-size:12px; color:#1a73e8; font-weight:bold;">QUESTION</div>
+                    <div class="fc-card-content" id="fc-front-text">表面</div>
+                    <div style="font-size:12px; color:#999; text-align:center;">クリックで答えを表示 ↻</div>
+                </div>
+                <div class="fc-card-face fc-card-back">
+                    <div style="font-size:12px; color:#28a745; font-weight:bold;">ANSWER</div>
+                    <div class="fc-card-content" id="fc-back-text">裏面</div>
+                    <div id="fc-back-hint" style="font-size:13px; color:#666; text-align:center;"></div>
+                    <div style="font-size:12px; color:#999; text-align:center;">もう一度クリックで戻る ↻</div>
+                </div>
+            </div>
+        </div>
+        <div class="fc-judge-buttons">
+            <button class="btn-fc-retry" onclick="markCard(false)">❌ まだ</button>
+            <button class="btn-fc-pass" onclick="markCard(true)">⭕ 覚えた (+3点)</button>
+        </div>
+    </div>
+
+    <!-- 📝 3. 通常の一覧テスト -->
+    <div id="output">ここに問題が表示されます。</div>
+    <div id="scoring-section">
+        <h3 style="margin-top:0; color:#0056b3;">✍️ 解答または自己採点</h3>
+        <textarea id="userAnswerInput" placeholder="ここに回答を入力してね...（手書きノートの写真をアップロードして採点もできます）"></textarea>
+        
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
+            <button id="gradeBtn" class="btn-primary" onclick="gradeQuestion()">採点する</button>
+            <button id="showAnswerBtn" class="btn-warning" onclick="showDirectAnswer()">解答を表示する</button>
+            <label class="btn-purple" style="cursor: pointer; margin: 0;">
+                📷 手書きノートを撮影して採点
+                <input type="file" id="answerImageInput" accept="image/*" capture="environment" style="display: none;" onchange="gradeWithImage(event)">
+            </label>
+        </div>
+        <div id="imagePreviewArea" style="display:none; margin: 10px 0;">
+            <img id="imagePreview" style="max-width: 200px; max-height: 150px; border-radius: 8px; border: 1px solid #ccc;">
+        </div>
+        <div id="grade-result" style="display:none; margin-top:20px; padding:15px; background:rgba(255,243,205,0.95); border-radius:8px; border:2px solid #ffeeba; white-space:pre-wrap; line-height:1.6; font-size: 16px;"></div>
+    </div>
+</div>
+
+<!-- モーダル群 -->
+<div id="hintModal" class="modal" role="dialog" aria-modal="true">
+    <div class="modal-content">
+        <button class="modal-close" onclick="closeModal('hintModal')">&times;</button>
+        <h3 style="margin-top:0; color:#ec971f;">💡 お助けヒント</h3>
+        <div id="hintText" style="line-height:1.6; font-size:15px; white-space:pre-wrap;">ヒントを考えているよ...</div>
+    </div>
+</div>
+
+<div id="historyModal" class="modal" role="dialog" aria-modal="true">
+    <div class="modal-content">
+        <button class="modal-close" onclick="closeModal('historyModal')">&times;</button>
+        <h3 style="margin-top:0; color:#11998e;">📜 学習履歴</h3>
+        <div id="scoreChartArea" style="width: 100%; height: 200px; display: none; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;"></div>
+        <div id="weakPointArea" style="display:none; margin-bottom:15px;"></div>
+        <div id="historyList" style="margin-top: 15px;"></div>
+    </div>
+</div>
+
+<div id="historyDetailModal" class="modal" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 600px;">
+        <button class="modal-close" onclick="closeModal('historyDetailModal')">&times;</button>
+        <h3 id="detailTitle" style="margin-top:0; color:#11998e;">📝 出題内容</h3>
+        <div id="detailDate" style="font-size:12px; color:#666; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:8px;"></div>
+        <h4 style="margin: 0 0 5px 0; color:#333;">📋 出題された問題</h4>
+        <div id="detailQuestions" style="background:#f8f9fa; padding:15px; border-radius:5px; max-height:250px; overflow-y:auto; border:1px solid #ddd; margin-bottom:15px; line-height: 1.6;"></div>
+        <button id="retryBtn" class="btn-success" style="width:100%; font-size:15px; padding: 12px;">🔄 この問題をもう一度解く</button>
+    </div>
+</div>
+
+<div id="secretModal" class="modal" role="dialog" aria-modal="true">
+    <div class="modal-content" style="text-align: center; max-width: 400px;">
+        <button class="modal-close" onclick="closeModal('secretModal')">&times;</button>
+        <h3 style="margin-top:0; color:#11998e; font-size: 20px;">🔑 秘密のコマンド入力</h3>
+        <p style="font-size: 13px; color:#666; margin-bottom: 15px;">裏技コマンドを入力して実行を押してね！</p>
+        <div class="input-group" style="justify-content: center; margin-bottom: 5px;">
+            <input type="text" id="commandInput" placeholder="コマンドを入力..." style="font-size: 15px; padding: 10px;" onkeypress="if(event.key==='Enter') executeCommand()">
+            <button class="btn-primary" style="font-size: 15px; padding: 10px 20px;" onclick="executeCommand()">実行</button>
+        </div>
+    </div>
+</div>
+
+<script type="importmap">
+{
+    "imports": { "@google/genai": "https://esm.run/@google/genai" }
+}
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
